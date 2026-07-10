@@ -1,3 +1,6 @@
+<img width="1978" height="218" alt="tradingwidget" src="https://github.com/user-attachments/assets/7a0e80d4-1fde-4ef8-9f4c-5b32feffaa1d" />
+
+
 <img width="1270" height="997" alt="image" src="https://github.com/user-attachments/assets/1525f650-7d44-4a5c-b842-2ba42e062c9d" />
 
 
