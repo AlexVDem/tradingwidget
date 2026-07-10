@@ -1,3 +1,6 @@
+<img width="1270" height="997" alt="image" src="https://github.com/user-attachments/assets/1525f650-7d44-4a5c-b842-2ba42e062c9d" />
+
+
 # TradingView Desktop Ticker Widget
 
 *(Русская версия ниже / Russian version below)*
