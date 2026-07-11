@@ -110,13 +110,53 @@ class DesktopWidget(Gtk.Window):
         self.webview = WebKit2.WebView.new_with_context(context)
         self.webview.set_settings(settings)
         self.webview.set_background_color(Gdk.RGBA(0, 0, 0, 0)) # Transparent background
-        
+
+        # If hover_pause is disabled, inject a script at document-start that:
+        # 1. Intercepts addEventListener to silently drop hover-related handlers
+        #    (works regardless of whether the widget uses CSS or JS for pause logic)
+        # 2. Forces shadow roots to open mode so CSS injection also works as backup
+        if not getattr(self, 'hover_pause', False):
+            manager = self.webview.get_user_content_manager()
+            hover_fix_js = """
+(function() {
+    // All hover-related event types to suppress
+    var HOVER_EVENTS = {
+        mouseenter: 1, mouseleave: 1, mouseover: 1, mouseout: 1,
+        pointerenter: 1, pointerleave: 1, pointerover: 1, pointerout: 1
+    };
+
+    // Replace addEventListener so hover handlers are registered as no-ops.
+    // Click / keyboard / other events are passed through unchanged.
+    var _addEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+        if (HOVER_EVENTS[type]) {
+            return _addEventListener.call(this, type, function(){}, options);
+        }
+        return _addEventListener.call(this, type, listener, options);
+    };
+
+    // Also force shadow roots open so CSS injection in ticker.html can work too
+    var _attachShadow = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function(init) {
+        return _attachShadow.call(this, Object.assign({}, init, {mode: 'open'}));
+    };
+})();
+"""
+            user_script = WebKit2.UserScript(
+                hover_fix_js,
+                WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+                WebKit2.UserScriptInjectionTime.START,
+                None, None
+            )
+            manager.add_script(user_script)
+
         # Load HTML with cache-busting timestamp and parameters
         current_dir = os.path.dirname(os.path.realpath(__file__))
         timestamp = int(time.time())
         item_size = "compact" if getattr(self, 'compact_mode', True) else "normal"
         color_theme = "dark" if getattr(self, 'dark_theme', True) else "light"
-        self.webview.load_uri(f"file://{os.path.join(current_dir, 'ticker.html')}?size={item_size}&theme={color_theme}&t={timestamp}")
+        hover_pause = "1" if getattr(self, 'hover_pause', False) else "0"
+        self.webview.load_uri(f"file://{os.path.join(current_dir, 'ticker.html')}?size={item_size}&theme={color_theme}&hover_pause={hover_pause}&t={timestamp}")
         
         self.add(self.webview)
         self.show_all()
@@ -254,6 +294,7 @@ class DesktopWidget(Gtk.Window):
             "enable_console_logs": False,
             "open_target": "window",
             "show_in_system_tray": True,
+            "hover_pause": False,
             "symbols": [
                 "FOREXCOM:SPXUSD",
                 "FOREXCOM:NSXUSD",
@@ -330,6 +371,7 @@ class DesktopWidget(Gtk.Window):
             const urlParams = new URLSearchParams(window.location.search);
             const itemSize = (urlParams.get('size') === 'compact') ? 'compact' : 'normal';
             const colorTheme = (urlParams.get('theme') === 'light') ? 'light' : 'dark';
+            const hoverPause = urlParams.get('hover_pause') === '1'; // default false
             
             const container = document.querySelector('.widget-container');
             
@@ -349,6 +391,37 @@ class DesktopWidget(Gtk.Window):
             widget.setAttribute('show-symbol-logo', 'true');
             
             container.appendChild(widget);
+
+            // When hover_pause is disabled: inject CSS directly into the widget's
+            // open shadow DOM to force animation-play-state: running at all times.
+            // This keeps native clicks working — no overlay needed.
+            if (!hoverPause) {
+                let fixApplied = false;
+
+                const applyHoverFix = () => {
+                    if (fixApplied) return true;
+                    const tvWidget = document.querySelector('tv-ticker-tape');
+                    if (tvWidget && tvWidget.shadowRoot) {
+                        const style = document.createElement('style');
+                        style.id = 'hover-pause-override';
+                        // Force all animations to keep running regardless of hover state
+                        style.textContent = '*, *:hover, *:focus { animation-play-state: running !important; }';
+                        tvWidget.shadowRoot.appendChild(style);
+                        fixApplied = true;
+                        return true;
+                    }
+                    return false;
+                };
+
+                // Try immediately, then poll until the shadow DOM is ready
+                if (!applyHoverFix()) {
+                    const interval = setInterval(() => {
+                        if (applyHoverFix()) clearInterval(interval);
+                    }, 150);
+                    // Stop trying after 15 seconds
+                    setTimeout(() => clearInterval(interval), 15000);
+                }
+            }
 
         </script>
     </div>
@@ -385,6 +458,7 @@ class DesktopWidget(Gtk.Window):
         self.enable_console_logs = False
         self.open_target = "window"
         self.show_in_system_tray = True
+        self.hover_pause = False
         self.symbols = [
             "FOREXCOM:SPXUSD",
             "FOREXCOM:NSXUSD",
@@ -409,6 +483,7 @@ class DesktopWidget(Gtk.Window):
                     self.enable_console_logs = cfg.get("enable_console_logs", self.enable_console_logs)
                     self.open_target = cfg.get("open_target", self.open_target)
                     self.show_in_system_tray = cfg.get("show_in_system_tray", self.show_in_system_tray)
+                    self.hover_pause = cfg.get("hover_pause", self.hover_pause)
                     self.symbols = cfg.get("symbols", self.symbols)
             except Exception as e:
                 print(f"Error reading configuration file: {e}")
