@@ -46,6 +46,7 @@ You can freely customize the widget by editing `widget_config.json`. The widget 
 | `enable_console_logs` | `false` | Set to `true` to print debug information (like intercepted clicks) to the terminal. |
 | `open_target` | `"window"` | Where to open the chart when a ticker is clicked. `"window"` opens a standalone GTK popup. `"browser"` opens your default web browser. |
 | `show_in_system_tray` | `true` | Set to `false` to hide the system tray status icon. |
+| `hover_pause` | `false` | Set to `true` to enable the automatic pause of the scrolling ticker when you hover over it. By default, the ticker scrolls continuously without stopping. Clicks on symbols continue to work normally. |
 | `symbols` | `[...]` | A JSON array of strings containing the ticker symbols you want to track. |
 
 ### How to add Tickers
@@ -97,6 +98,7 @@ python3 start_widget.py
 | `enable_console_logs` | `false` | Установите в `true`, чтобы в терминал выводилась отладочная информация (например, при клике на тикер). |
 | `open_target` | `"window"` | Где открывать график при клике. `"window"` — открыть во встроенном GTK-окне. `"browser"` — открыть в стандартном браузере системы. |
 | `show_in_system_tray` | `true` | Установите в `false`, чтобы скрыть иконку приложения из системного лотка (трея). |
+| `hover_pause` | `false` | Установите в `true`, чтобы включить автоматическую паузу бегущей строки при наведении курсора мыши. По умолчанию пауза отключена, и лента прокручивается непрерывно. Клики по тикерам продолжают работать в штатном режиме. |
 | `symbols` | `[...]` | JSON-массив строк со списком тикеров для отображения. |
 
 ### Где брать тикеры (Symbols)
