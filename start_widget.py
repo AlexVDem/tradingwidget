@@ -9,23 +9,60 @@ try:
 except ValueError:
     gi.require_version('WebKit2', '4.0')
 
+try:
+    gi.require_version('AppIndicator3', '0.1')
+    from gi.repository import AppIndicator3
+    HAS_APPINDICATOR = True
+except ValueError:
+    HAS_APPINDICATOR = False
+
 from gi.repository import Gtk, WebKit2, Gdk, GLib
 
 class ChartWindow(Gtk.Window):
-    def __init__(self, uri, title="TradingView Chart"):
+    def __init__(self, uri, title="TradingView Chart", parent_windows_list=None):
         Gtk.Window.__init__(self, title=title)
         self.set_default_size(1200, 800)
         self.set_position(Gtk.WindowPosition.CENTER)
         
+        # Hide this window from the dock and taskbar completely
+        self.set_skip_taskbar_hint(True)
+        
+        self.parent_windows_list = parent_windows_list
+        self.connect("delete-event", self.on_delete_event)
+        
+        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "chart.png")
+        if os.path.exists(icon_path):
+            self.set_icon_from_file(icon_path)
+            
         self.webview = WebKit2.WebView()
         self.add(self.webview)
         self.webview.load_uri(uri)
         self.show_all()
 
+    def on_delete_event(self, widget, event):
+        # Instantly hide the window from screen and dock
+        self.hide()
+        self.set_skip_taskbar_hint(True)
+        
+        # Remove reference from parent so Python garbage collector can delete it
+        if self.parent_windows_list is not None and self in self.parent_windows_list:
+            self.parent_windows_list.remove(self)
+            
+        # Hard destroy WebKit and the window
+        self.webview.destroy()
+        self.destroy()
+        
+        # Return True to indicate we've handled the deletion entirely ourselves
+        return True
+
 class DesktopWidget(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, type=Gtk.WindowType.TOPLEVEL)
         
+        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "chart.png")
+        if os.path.exists(icon_path):
+            self.set_icon_from_file(icon_path)
+            
         # Declare configuration and html paths
         self.config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "widget_config.json")
         self.html_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "ticker.html")
@@ -35,6 +72,8 @@ class DesktopWidget(Gtk.Window):
 
         # Check and auto-create files if missing
         self.ensure_files_exist()
+
+        self.setup_system_tray()
         
         # Connect window destroy signal to stop the Gtk main loop
         self.connect("destroy", Gtk.main_quit)
@@ -48,7 +87,7 @@ class DesktopWidget(Gtk.Window):
         self.set_skip_pager_hint(True)
 
         # Set default size using config parameters
-        window_height = 76 if getattr(self, 'item_size', 'compact') == 'compact' else 104
+        window_height = 76 if getattr(self, 'compact_mode', True) else 104
         self.set_default_size(self.widget_width, window_height)
         # Position on screen (x, y) from config
         self.move(self.position_x, self.position_y)
@@ -72,10 +111,12 @@ class DesktopWidget(Gtk.Window):
         self.webview.set_settings(settings)
         self.webview.set_background_color(Gdk.RGBA(0, 0, 0, 0)) # Transparent background
         
-        # Load HTML with cache-busting timestamp and item_size parameter
+        # Load HTML with cache-busting timestamp and parameters
         current_dir = os.path.dirname(os.path.realpath(__file__))
         timestamp = int(time.time())
-        self.webview.load_uri(f"file://{os.path.join(current_dir, 'ticker.html')}?size={self.item_size}&t={timestamp}")
+        item_size = "compact" if getattr(self, 'compact_mode', True) else "normal"
+        color_theme = "dark" if getattr(self, 'dark_theme', True) else "light"
+        self.webview.load_uri(f"file://{os.path.join(current_dir, 'ticker.html')}?size={item_size}&theme={color_theme}&t={timestamp}")
         
         self.add(self.webview)
         self.show_all()
@@ -86,11 +127,49 @@ class DesktopWidget(Gtk.Window):
         # Connect to create signal to handle links opening in new windows (like target="_blank")
         self.webview.connect("create", self.on_create_webview)
 
+        # Connect right click for context menu
+        self.webview.connect("button-press-event", self.on_button_press)
+
         # Temporarily disable click-through for testing click events
         # self.connect("map", self.make_click_through)
         
         # Connect to size-allocate signal to dynamically scale zoom based on window height
         self.connect("size-allocate", self.on_size_allocate)
+
+    def setup_system_tray(self):
+        if getattr(self, 'show_in_system_tray', True) and HAS_APPINDICATOR:
+            icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "chart.png")
+            
+            menu = Gtk.Menu()
+            item = Gtk.MenuItem(label="Close Widget")
+            item.connect("activate", lambda w: Gtk.main_quit())
+            menu.append(item)
+            menu.show_all()
+            
+            if os.path.exists(icon_path):
+                self.tray = AppIndicator3.Indicator.new(
+                    "tradingview-widget",
+                    icon_path,
+                    AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+            else:
+                self.tray = AppIndicator3.Indicator.new(
+                    "tradingview-widget",
+                    "application-default-icon",
+                    AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+            
+            self.tray.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+            self.tray.set_menu(menu)
+
+    def on_button_press(self, widget, event):
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            menu = Gtk.Menu()
+            item = Gtk.MenuItem(label="Close Widget")
+            item.connect("activate", lambda w: Gtk.main_quit())
+            menu.append(item)
+            menu.show_all()
+            menu.popup(None, None, None, None, event.button, event.time)
+            return True # Prevent webkit default context menu
+        return False
 
     def on_create_webview(self, webview, navigation_action):
         # Extract target URI from navigation action
@@ -111,8 +190,8 @@ class DesktopWidget(Gtk.Window):
             if getattr(self, 'open_target', 'browser') == 'window':
                 if not hasattr(self, 'chart_windows'):
                     self.chart_windows = []
-                # Keep a reference to prevent garbage collection of the new window
-                new_chart_win = ChartWindow(uri, title=f"TradingView - {symbol}")
+                # Pass the list so the window can remove itself on close
+                new_chart_win = ChartWindow(uri, title=f"TradingView - {symbol}", parent_windows_list=self.chart_windows)
                 self.chart_windows.append(new_chart_win)
             else:
                 webbrowser.open(uri)
@@ -141,7 +220,7 @@ class DesktopWidget(Gtk.Window):
                 if getattr(self, 'open_target', 'browser') == 'window':
                     if not hasattr(self, 'chart_windows'):
                         self.chart_windows = []
-                    new_chart_win = ChartWindow(uri, title=f"TradingView - {symbol}")
+                    new_chart_win = ChartWindow(uri, title=f"TradingView - {symbol}", parent_windows_list=self.chart_windows)
                     self.chart_windows.append(new_chart_win)
                 else:
                     webbrowser.open(uri)
@@ -170,9 +249,11 @@ class DesktopWidget(Gtk.Window):
             "widget_width": 1800,
             "position_x": 150,
             "position_y": 50,
-            "item_size": "compact",
+            "compact_mode": True,
+            "dark_theme": True,
             "enable_console_logs": False,
             "open_target": "window",
+            "show_in_system_tray": True,
             "symbols": [
                 "FOREXCOM:SPXUSD",
                 "FOREXCOM:NSXUSD",
@@ -245,9 +326,10 @@ class DesktopWidget(Gtk.Window):
                 return false;
             };
 
-            // Read item_size synchronously from URI query parameter (e.g. ?size=compact)
+            // Read parameters synchronously from URI query parameter
             const urlParams = new URLSearchParams(window.location.search);
             const itemSize = (urlParams.get('size') === 'compact') ? 'compact' : 'normal';
+            const colorTheme = (urlParams.get('theme') === 'light') ? 'light' : 'dark';
             
             const container = document.querySelector('.widget-container');
             
@@ -262,7 +344,7 @@ class DesktopWidget(Gtk.Window):
             const widget = document.createElement('tv-ticker-tape');
             widget.setAttribute('symbols', '{symbols_string}');
             widget.setAttribute('item-size', itemSize);
-            widget.setAttribute('color-theme', 'dark');
+            widget.setAttribute('theme', colorTheme);
             widget.setAttribute('is-interactive', 'true');
             widget.setAttribute('show-symbol-logo', 'true');
             
@@ -284,7 +366,7 @@ class DesktopWidget(Gtk.Window):
                 
         # Always regenerate ticker.html to reflect current config
         symbols_csv = ",".join(self.symbols)
-        tape_height = "44px" if getattr(self, 'item_size', 'compact') == 'compact' else "72px"
+        tape_height = "44px" if getattr(self, 'compact_mode', True) else "72px"
         formatted_html = default_html.replace("{symbols_string}", symbols_csv).replace("{tape_height}", tape_height)
         try:
             with open(self.html_path, "w", encoding="utf-8") as f:
@@ -298,9 +380,11 @@ class DesktopWidget(Gtk.Window):
         self.widget_width = 1800
         self.position_x = 150
         self.position_y = 50
-        self.item_size = "compact"
+        self.compact_mode = True
+        self.dark_theme = True
         self.enable_console_logs = False
         self.open_target = "window"
+        self.show_in_system_tray = True
         self.symbols = [
             "FOREXCOM:SPXUSD",
             "FOREXCOM:NSXUSD",
@@ -320,9 +404,11 @@ class DesktopWidget(Gtk.Window):
                     self.widget_width = cfg.get("widget_width", self.widget_width)
                     self.position_x = cfg.get("position_x", self.position_x)
                     self.position_y = cfg.get("position_y", self.position_y)
-                    self.item_size = cfg.get("item_size", self.item_size)
+                    self.compact_mode = cfg.get("compact_mode", self.compact_mode)
+                    self.dark_theme = cfg.get("dark_theme", self.dark_theme)
                     self.enable_console_logs = cfg.get("enable_console_logs", self.enable_console_logs)
                     self.open_target = cfg.get("open_target", self.open_target)
+                    self.show_in_system_tray = cfg.get("show_in_system_tray", self.show_in_system_tray)
                     self.symbols = cfg.get("symbols", self.symbols)
             except Exception as e:
                 print(f"Error reading configuration file: {e}")
