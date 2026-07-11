@@ -3,7 +3,6 @@
 
 <img width="1270" height="997" alt="image" src="https://github.com/user-attachments/assets/1525f650-7d44-4a5c-b842-2ba42e062c9d" />
 
-
 # TradingView Desktop Ticker Widget
 
 *(Русская версия ниже / Russian version below)*
@@ -15,12 +14,12 @@ A borderless, transparent, floating desktop widget for Linux (GTK3 / WebKit2) th
 - **Interactive**: Tickers are fully clickable.
 - **Built-in Chart Window**: Clicking a ticker automatically opens a beautiful, isolated GTK chart window by default (or your system web browser, if preferred).
 - **Dynamic Sizing**: Supports "compact" and "normal" TradingView display sizes with automatic window resizing and zooming.
+- **System Tray Integration**: Includes a status icon in your system tray and a right-click context menu on the widget itself for easy closing.
 - **Auto-Configuring**: Generates its own JSON configuration and HTML wrapper on first launch.
 
 ## Requirements
 You need Python 3 and the GTK/WebKit2 introspection libraries. On Ubuntu/Debian, install them via:
-```bash
-sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-appindicator3-0.1
 ```
 *(If WebKit2 4.1 is not available, the script will gracefully fall back to 4.0)*
 
@@ -41,9 +40,11 @@ You can freely customize the widget by editing `widget_config.json`. The widget 
 | `widget_width` | `1800` | The width of the widget in pixels. |
 | `position_x` | `150` | The X coordinate of the widget on your screen. |
 | `position_y` | `50` | The Y coordinate of the widget on your screen. |
-| `item_size` | `"compact"` | The size of the ticker tape. Can be `"compact"` or `"normal"`. The widget will automatically adjust its height and zoom level based on this. |
+| `compact_mode` | `true` | Set to `false` to switch the ticker tape to normal (larger) display mode. |
+| `dark_theme` | `true` | Set to `false` to switch the TradingView widget to a light color theme. |
 | `enable_console_logs` | `false` | Set to `true` to print debug information (like intercepted clicks) to the terminal. |
 | `open_target` | `"window"` | Where to open the chart when a ticker is clicked. `"window"` opens a standalone GTK popup. `"browser"` opens your default web browser. |
+| `show_in_system_tray` | `true` | Set to `false` to hide the system tray status icon. |
 | `symbols` | `[...]` | A JSON array of strings containing the ticker symbols you want to track. |
 
 ### How to add Tickers
@@ -63,12 +64,13 @@ To find a ticker, go to [TradingView.com](https://www.tradingview.com/screener/)
 - **Интерактивность**: На элементы бегущей строки можно кликать.
 - **Встроенные графики**: При клике на актив по умолчанию открывается красивое изолированное GTK-окно с графиком TradingView (или страница в системном браузере, если вам так удобнее).
 - **Динамический размер**: Поддерживает режимы "compact" (компактный) и "normal" (обычный), автоматически подстраивая высоту окна и масштаб ленты.
+- **Системный трей и меню**: Интегрируется в системный лоток, а по клику правой кнопкой мыши по самому виджету вызывается меню для быстрого закрытия.
 - **Автонастройка**: При первом запуске скрипт сам создает нужные JSON-конфиги и HTML-обертки.
 
 ## Требования
 Для работы потребуется Python 3 и библиотеки GTK/WebKit2. На Ubuntu/Debian их можно установить командой:
 ```bash
-sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-appindicator3-0.1
 ```
 *(Если WebKit2 версии 4.1 недоступен в вашей системе, скрипт автоматически использует версию 4.0)*
 
@@ -89,9 +91,11 @@ python3 start_widget.py
 | `widget_width` | `1800` | Ширина виджета в пикселях. |
 | `position_x` | `150` | Позиция виджета на экране по оси X (по горизонтали). |
 | `position_y` | `50` | Позиция виджета на экране по оси Y (по вертикали). |
-| `item_size` | `"compact"` | Размер элементов ленты. Может быть `"compact"` (компактный) или `"normal"` (обычный). Скрипт сам рассчитает высоту окна. |
+| `compact_mode` | `true` | Установите в `false`, чтобы переключить ленту на нормальный (увеличенный) режим отображения. |
+| `dark_theme` | `true` | Установите в `false`, чтобы переключить виджет на светлую тему оформления. |
 | `enable_console_logs` | `false` | Установите в `true`, чтобы в терминал выводилась отладочная информация (например, при клике на тикер). |
 | `open_target` | `"window"` | Где открывать график при клике. `"window"` — открыть во встроенном GTK-окне. `"browser"` — открыть в стандартном браузере системы. |
+| `show_in_system_tray` | `true` | Установите в `false`, чтобы скрыть иконку приложения из системного лотка (трея). |
 | `symbols` | `[...]` | JSON-массив строк со списком тикеров для отображения. |
 
 ### Где брать тикеры (Symbols)
