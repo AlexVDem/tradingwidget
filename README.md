@@ -19,6 +19,7 @@ A borderless, transparent, floating desktop widget for Linux (GTK3 / WebKit2) th
 
 ## Requirements
 You need Python 3 and the GTK/WebKit2 introspection libraries. On Ubuntu/Debian, install them via:
+```bash
 sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-appindicator3-0.1
 ```
 *(If WebKit2 4.1 is not available, the script will gracefully fall back to 4.0)*
