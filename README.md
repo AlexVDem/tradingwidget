@@ -10,7 +10,8 @@
 A borderless, transparent, floating desktop widget for Linux (GTK3 / WebKit2) that displays a live, scrolling ticker tape of your favorite stocks, cryptocurrencies, and indices using the TradingView Web Widget.
 
 ## Features
-- **Seamless Integration**: Fully transparent, borderless, and undecorated window. Designed to sit quietly on your desktop.
+- **Seamless Integration**: Fully transparent, borderless, and undecorated window. Designed to sit quietly on your desktop (below all other windows by default).
+- **Always on Top Option**: Switch between background desktop mode and a floating layer positioned on top of all other windows.
 - **Interactive**: Tickers are fully clickable.
 - **Built-in Chart Window**: Clicking a ticker automatically opens a beautiful, isolated GTK chart window by default (or your system web browser, if preferred).
 - **Dynamic Sizing**: Supports "compact" and "normal" TradingView display sizes with automatic window resizing and zooming.
@@ -43,6 +44,7 @@ You can easily customize the widget by right-clicking the widget or using the sy
 | `position_y` | `50` | The Y coordinate of the widget on your screen. |
 | `compact_mode` | `true` | Set to `false` to switch the ticker tape to normal (larger) display mode. |
 | `dark_theme` | `true` | Set to `false` to switch the TradingView widget to a light color theme. |
+| `always_on_top` | `false` | Set to `true` to display the widget above all other windows. By default, the widget sits in the background (below all other windows). |
 | `enable_console_logs` | `false` | Set to `true` to print debug information (like intercepted clicks) to the terminal. |
 | `open_target` | `"window"` | Where to open the chart when a ticker is clicked. `"window"` opens a standalone GTK popup. `"browser"` opens your default web browser. |
 | `show_in_system_tray` | `true` | Set to `false` to hide the system tray status icon. |
@@ -62,7 +64,8 @@ To find a ticker, go to [TradingView.com](https://www.tradingview.com/screener/)
 Прозрачный, плавающий десктопный виджет для Linux (на базе GTK3 / WebKit2), который отображает живую бегущую строку котировок акций, криптовалют и индексов с использованием веб-виджета TradingView.
 
 ## Особенности
-- **Идеальная интеграция**: Полностью прозрачное окно без рамок и заголовков. Создано, чтобы гармонично смотреться прямо на обоях рабочего стола.
+- **Идеальная интеграция**: Полностью прозрачное окно без рамок и заголовков. Создано, чтобы гармонично смотреться прямо на обоях рабочего стола (по умолчанию находится под всеми окнами).
+- **Отображение поверх окон**: Опция легкого закрепления виджета поверх всех остальных приложений (Always on Top).
 - **Интерактивность**: На элементы бегущей строки можно кликать.
 - **Встроенные графики**: При клике на актив по умолчанию открывается красивое изолированное GTK-окно с графиком TradingView (или страница в системном браузере, если вам так удобнее).
 - **Динамический размер**: Поддерживает режимы "compact" (компактный) и "normal" (обычный), автоматически подстраивая высоту окна и масштаб ленты.
@@ -95,6 +98,7 @@ python3 start_widget.py
 | `position_y` | `50` | Позиция виджета на экране по оси Y (по вертикали). |
 | `compact_mode` | `true` | Установите в `false`, чтобы переключить ленту на нормальный (увеличенный) режим отображения. |
 | `dark_theme` | `true` | Установите в `false`, чтобы переключить виджет на светлую тему оформления. |
+| `always_on_top` | `false` | Установите в `true`, чтобы отображать виджет поверх остальных окон. По умолчанию виджет закреплен на фоне (под всеми окнами). |
 | `enable_console_logs` | `false` | Установите в `true`, чтобы в терминал выводилась отладочная информация (например, при клике на тикер). |
 | `open_target` | `"window"` | Где открывать график при клике. `"window"` — открыть во встроенном GTK-окне. `"browser"` — открыть в стандартном браузере системы. |
 | `show_in_system_tray` | `true` | Установите в `false`, чтобы скрыть иконку приложения из системного лотка (трея). |
