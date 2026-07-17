@@ -29,9 +29,11 @@ DEFAULT_CONFIG = {
     "position_y": 50,
     "compact_mode": True,
     "dark_theme": True,
+    "always_on_top": False,
     "enable_console_logs": False,
     "open_target": "window",
     "show_in_system_tray": True,
+    "start_minimized": False,
     "hover_pause": False,
     "symbols": [
         "FOREXCOM:SPXUSD",
@@ -86,15 +88,22 @@ class SettingsWindow(Gtk.Window):
                 "position_y": self.parent_widget.position_y,
                 "compact_mode": self.parent_widget.compact_mode,
                 "dark_theme": self.parent_widget.dark_theme,
+                "always_on_top": getattr(self.parent_widget, 'always_on_top', False),
                 "hover_pause": self.parent_widget.hover_pause,
                 "show_in_system_tray": self.parent_widget.show_in_system_tray,
+                "start_minimized": self.parent_widget.start_minimized,
                 "enable_console_logs": self.parent_widget.enable_console_logs,
                 "open_target": self.parent_widget.open_target,
                 "symbols": self.parent_widget.symbols
             }
             json_str = json.dumps(config_data)
             js_code = f"initSettings({json_str});"
-            self.webview.run_javascript(js_code, None, None, None)
+            try:
+                # Modern WebKit2 API (prevents DeprecationWarning)
+                self.webview.evaluate_javascript(js_code, -1, None, None, None, None, None)
+            except (AttributeError, TypeError):
+                # Fallback for older WebKit2 versions
+                self.webview.run_javascript(js_code, None, None, None)
             
     def on_cancel_settings(self, user_content_manager, js_result):
         self.destroy()
@@ -170,9 +179,17 @@ class DesktopWidget(Gtk.Window):
         # Connect window destroy signal to stop the Gtk main loop
         self.connect("destroy", Gtk.main_quit)
         
-        # Window setup: undecorated, always below, skip taskbar and pager
+        # Window setup: undecorated, skip taskbar and pager
         self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
-        self.set_keep_below(True)
+        
+        # Apply always-on-top or always-below layer settings
+        if getattr(self, 'always_on_top', False):
+            self.set_keep_above(True)
+            self.set_keep_below(False)
+        else:
+            self.set_keep_below(True)
+            self.set_keep_above(False)
+            
         self.set_decorated(False)
         self.set_app_paintable(True)
         self.set_skip_taskbar_hint(True)
@@ -268,11 +285,27 @@ class DesktopWidget(Gtk.Window):
         # Connect to size-allocate signal to dynamically scale zoom based on window height
         self.connect("size-allocate", self.on_size_allocate)
 
+        # Handle start mode (minimized to tray vs visible window)
+        self.widget_visible = True
+        if getattr(self, 'start_minimized', False) and getattr(self, 'show_in_system_tray', True):
+            self.hide()
+            self.widget_visible = False
+            self.update_tray_menu_label()
+
     def setup_system_tray(self):
         if getattr(self, 'show_in_system_tray', True) and HAS_APPINDICATOR:
             icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "chart.png")
             
             menu = Gtk.Menu()
+            
+            # Toggle visibility item
+            self.tray_toggle_item = Gtk.MenuItem(label="Hide" if getattr(self, 'widget_visible', True) else "Show")
+            self.tray_toggle_item.connect("activate", self.on_toggle_visibility_clicked)
+            menu.append(self.tray_toggle_item)
+            
+            # Separator for toggle
+            sep_toggle = Gtk.SeparatorMenuItem()
+            menu.append(sep_toggle)
             
             # Settings item
             settings_item = Gtk.MenuItem(label="Settings")
@@ -307,6 +340,16 @@ class DesktopWidget(Gtk.Window):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             menu = Gtk.Menu()
             
+            # Hide option (only if tray icon is enabled so user doesn't lose the widget)
+            if getattr(self, 'show_in_system_tray', True):
+                hide_item = Gtk.MenuItem(label="Hide")
+                hide_item.connect("activate", lambda w: self.set_widget_visible(False))
+                menu.append(hide_item)
+                
+                # Separator
+                sep_hide = Gtk.SeparatorMenuItem()
+                menu.append(sep_hide)
+            
             # Settings item
             settings_item = Gtk.MenuItem(label="Settings")
             settings_item.connect("activate", self.on_open_settings)
@@ -336,6 +379,21 @@ class DesktopWidget(Gtk.Window):
     def on_settings_closed(self, widget):
         self.settings_win = None
 
+    def on_toggle_visibility_clicked(self, widget):
+        self.set_widget_visible(not getattr(self, 'widget_visible', True))
+
+    def set_widget_visible(self, visible):
+        self.widget_visible = visible
+        if visible:
+            self.show()
+        else:
+            self.hide()
+        self.update_tray_menu_label()
+
+    def update_tray_menu_label(self):
+        if hasattr(self, 'tray_toggle_item') and self.tray_toggle_item:
+            self.tray_toggle_item.set_label("Hide" if getattr(self, 'widget_visible', True) else "Show")
+
     def apply_new_config(self, new_cfg):
         # 1. Update instance variables
         self.widget_width = new_cfg.get("widget_width", self.widget_width)
@@ -343,9 +401,19 @@ class DesktopWidget(Gtk.Window):
         self.position_y = new_cfg.get("position_y", self.position_y)
         self.compact_mode = new_cfg.get("compact_mode", self.compact_mode)
         self.dark_theme = new_cfg.get("dark_theme", self.dark_theme)
+        self.always_on_top = new_cfg.get("always_on_top", getattr(self, 'always_on_top', False))
         self.hover_pause = new_cfg.get("hover_pause", self.hover_pause)
         self.show_in_system_tray = new_cfg.get("show_in_system_tray", self.show_in_system_tray)
+        self.start_minimized = new_cfg.get("start_minimized", getattr(self, 'start_minimized', False))
         self.symbols = new_cfg.get("symbols", self.symbols)
+        
+        # Apply layer settings immediately on save
+        if self.always_on_top:
+            self.set_keep_above(True)
+            self.set_keep_below(False)
+        else:
+            self.set_keep_below(True)
+            self.set_keep_above(False)
         
         # 2. Save config to file
         try:
@@ -654,9 +722,11 @@ class DesktopWidget(Gtk.Window):
                     self.position_y = cfg.get("position_y", self.position_y)
                     self.compact_mode = cfg.get("compact_mode", self.compact_mode)
                     self.dark_theme = cfg.get("dark_theme", self.dark_theme)
+                    self.always_on_top = cfg.get("always_on_top", getattr(self, 'always_on_top', False))
                     self.enable_console_logs = cfg.get("enable_console_logs", self.enable_console_logs)
                     self.open_target = cfg.get("open_target", self.open_target)
                     self.show_in_system_tray = cfg.get("show_in_system_tray", self.show_in_system_tray)
+                    self.start_minimized = cfg.get("start_minimized", self.start_minimized)
                     self.hover_pause = cfg.get("hover_pause", self.hover_pause)
                     self.symbols = cfg.get("symbols", self.symbols)
             except Exception as e:
@@ -678,8 +748,10 @@ class DesktopWidget(Gtk.Window):
             "position_y":         DEFAULT_CONFIG["position_y"],
             "compact_mode":       DEFAULT_CONFIG["compact_mode"],
             "dark_theme":         DEFAULT_CONFIG["dark_theme"],
+            "always_on_top":      DEFAULT_CONFIG["always_on_top"],
             "hover_pause":        DEFAULT_CONFIG["hover_pause"],
             "show_in_system_tray":DEFAULT_CONFIG["show_in_system_tray"],
+            "start_minimized":    DEFAULT_CONFIG["start_minimized"],
             "enable_console_logs":DEFAULT_CONFIG["enable_console_logs"],
             "open_target":        DEFAULT_CONFIG["open_target"],
             "symbols":            DEFAULT_CONFIG["symbols"],
@@ -708,32 +780,47 @@ class DesktopWidget(Gtk.Window):
             --border-color: #363c4e;
             --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }}
-        body {{
+        html, body {{
+            height: 100%;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background-color: var(--bg-color);
             color: var(--text-color);
             font-family: var(--font-family);
             font-size: 14px;
             user-select: none;
-            overflow-x: hidden;
+            overflow: hidden;
         }}
         h2 {{
             margin-top: 0;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             font-size: 18px;
             font-weight: 600;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 10px;
             color: #ffffff;
+            flex-shrink: 0;
         }}
         .settings-container {{
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            height: 100vh;
+            box-sizing: border-box;
             max-width: 600px;
             margin: 0 auto;
+            padding: 20px 20px 0 20px;
         }}
+        .settings-content {{
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }}
+        .settings-content::-webkit-scrollbar {{ width: 6px; }}
+        .settings-content::-webkit-scrollbar-track {{ background: transparent; }}
+        .settings-content::-webkit-scrollbar-thumb {{ background: var(--border-color); border-radius: 3px; }}
         .section-title {{
             font-size: 12px;
             font-weight: 700;
@@ -829,9 +916,10 @@ class DesktopWidget(Gtk.Window):
         .symbols-actions {{ display: flex; justify-content: flex-start; }}
         .footer-buttons {{
             display: flex; justify-content: flex-end; gap: 12px;
-            margin-top: 10px;
             border-top: 1px solid var(--border-color);
-            padding-top: 16px;
+            padding: 16px 0 20px 0;
+            background-color: var(--bg-color);
+            flex-shrink: 0;
         }}
         .arrow-btn {{ font-size: 12px; }}
     </style>
@@ -840,86 +928,108 @@ class DesktopWidget(Gtk.Window):
     <div class="settings-container">
         <h2>TradingView Widget Settings</h2>
 
-        <!-- Size and Position -->
-        <div class="section-title">Appearance &amp; Position</div>
-        <div class="settings-card">
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Widget Width</span>
-                    <span class="setting-desc">Ticker tape width on desktop (px)</span>
+        <div class="settings-content">
+            <!-- Size and Position -->
+            <div class="section-title">Appearance &amp; Position</div>
+            <div class="settings-card">
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Widget Width</span>
+                        <span class="setting-desc">Ticker tape width on desktop (px)</span>
+                    </div>
+                    <input type="number" id="widget_width" min="200" max="7680" required>
                 </div>
-                <input type="number" id="widget_width" min="200" max="7680" required>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Position X</span>
-                    <span class="setting-desc">Horizontal offset from left edge (px)</span>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Position X</span>
+                        <span class="setting-desc">Horizontal offset from left edge (px)</span>
+                    </div>
+                    <input type="number" id="position_x" min="0" max="7680" required>
                 </div>
-                <input type="number" id="position_x" min="0" max="7680" required>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Position Y</span>
-                    <span class="setting-desc">Vertical offset from top edge (px)</span>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Position Y</span>
+                        <span class="setting-desc">Vertical offset from top edge (px)</span>
+                    </div>
+                    <input type="number" id="position_y" min="0" max="4320" required>
                 </div>
-                <input type="number" id="position_y" min="0" max="4320" required>
             </div>
-        </div>
 
-        <!-- Toggles -->
-        <div class="section-title">Display Options</div>
-        <div class="settings-card">
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Compact Mode</span>
-                    <span class="setting-desc">Reduced tape height (44px instead of 72px)</span>
+            <!-- Toggles -->
+            <div class="section-title">Display Options</div>
+            <div class="settings-card">
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Compact Mode</span>
+                        <span class="setting-desc">Reduced tape height (44px instead of 72px)</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="compact_mode">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="compact_mode">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Dark Theme</span>
-                    <span class="setting-desc">Use TradingView dark theme</span>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Dark Theme</span>
+                        <span class="setting-desc">Use TradingView dark theme</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="dark_theme">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="dark_theme">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">Pause on Hover</span>
-                    <span class="setting-desc">Stop scrolling when cursor hovers over widget</span>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Always on Top</span>
+                        <span class="setting-desc">Keep the widget visible above all other windows</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="always_on_top">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="hover_pause">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span class="setting-name">System Tray Icon</span>
-                    <span class="setting-desc">Show widget icon in taskbar</span>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">Pause on Hover</span>
+                        <span class="setting-desc">Stop scrolling when cursor hovers over widget</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="hover_pause">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="show_in_system_tray">
-                    <span class="slider"></span>
-                </label>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span class="setting-name">System Tray Icon</span>
+                        <span class="setting-desc">Show widget icon in taskbar</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="show_in_system_tray">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row" id="start_minimized_row">
+                    <div class="setting-label">
+                        <span class="setting-name">Start Minimized to Tray</span>
+                        <span class="setting-desc">Start the widget hidden on the desktop, only showing the tray icon</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="start_minimized">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
-        </div>
 
-        <!-- Symbols List -->
-        <div class="section-title">Ticker List (Symbols)</div>
-        <div class="settings-card">
-            <div class="symbols-list" id="symbols_container"></div>
-            <div class="symbols-actions">
-                <button type="button" class="btn" id="btn_add_symbol">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                    Add Ticker
-                </button>
+            <!-- Symbols List -->
+            <div class="section-title">Ticker List (Symbols)</div>
+            <div class="settings-card">
+                <div class="symbols-list" id="symbols_container"></div>
+                <div class="symbols-actions">
+                    <button type="button" class="btn" id="btn_add_symbol">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                        Add Ticker
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -947,14 +1057,36 @@ class DesktopWidget(Gtk.Window):
             }}
         }};
 
+        const showTrayCheckbox = document.getElementById('show_in_system_tray');
+        const startMinCheckbox = document.getElementById('start_minimized');
+        const startMinRow = document.getElementById('start_minimized_row');
+
+        function updateCheckboxDependencies() {{
+            if (!showTrayCheckbox.checked) {{
+                startMinCheckbox.checked = false;
+                startMinCheckbox.disabled = true;
+                startMinRow.style.opacity = '0.5';
+            }} else {{
+                startMinCheckbox.disabled = false;
+                startMinRow.style.opacity = '1';
+            }}
+        }}
+
+        showTrayCheckbox.addEventListener('change', updateCheckboxDependencies);
+
         function populateForm(cfg) {{
             document.getElementById('widget_width').value = cfg.widget_width || DEFAULT_VALUES.widget_width;
             document.getElementById('position_x').value   = cfg.position_x   || DEFAULT_VALUES.position_x;
             document.getElementById('position_y').value   = cfg.position_y   || DEFAULT_VALUES.position_y;
             document.getElementById('compact_mode').checked       = !!cfg.compact_mode;
             document.getElementById('dark_theme').checked         = !!cfg.dark_theme;
+            document.getElementById('always_on_top').checked      = !!cfg.always_on_top;
             document.getElementById('hover_pause').checked        = !!cfg.hover_pause;
             document.getElementById('show_in_system_tray').checked = !!cfg.show_in_system_tray;
+            document.getElementById('start_minimized').checked    = !!cfg.start_minimized;
+            
+            updateCheckboxDependencies();
+
             const container = document.getElementById('symbols_container');
             container.innerHTML = '';
             if (Array.isArray(cfg.symbols)) {{
@@ -1028,8 +1160,10 @@ class DesktopWidget(Gtk.Window):
                 position_y:          posY,
                 compact_mode:        document.getElementById('compact_mode').checked,
                 dark_theme:          document.getElementById('dark_theme').checked,
+                always_on_top:       document.getElementById('always_on_top').checked,
                 hover_pause:         document.getElementById('hover_pause').checked,
                 show_in_system_tray: document.getElementById('show_in_system_tray').checked,
+                start_minimized:     document.getElementById('start_minimized').checked,
                 enable_console_logs: currentConfig.enable_console_logs || false,
                 open_target:         currentConfig.open_target || "window",
                 symbols:             symbols
